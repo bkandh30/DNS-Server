@@ -71,3 +71,9 @@ Each question has the following structure:
 - Name: A domain name, represented as a sequence of labels.
 - Type: The type of record.
 - Class; Usually set to 1.
+
+## Answer Section Structure
+
+Answer section contains a list of resource records, which are answers to the questions asked in the question section.
+
+Each RR has: Name, Type, Class, TTL (Time to Live), Length and Data. TTL is the duration in seconds a record can be cached before querying.
