@@ -1,22 +1,38 @@
 import socket
 import struct
 
-def build_dns_response():
-    transaction_id = struct.pack(">H", 1234)  # ID: 1234 (0x04d2)
-    flags = struct.pack(">H", 0x8000)         # Flags: Standard response, no error
+domain_name = b"\x0c" + b"codecrafters" + b"\x02" + b"io" + b"\x00"
+
+def build_dns_response(query_packet: bytes) -> bytes:
+    #Parse the DNS header
+    query_id = query_packet[0:2]
+    flags = struct.unpack(">H", query_packet[2:4])[0]
+    opcode = (flags >> 11) & 0xF
+    rd = (flags >> 8) & 0x1
+
+    #Response Flags
+    response_flags = 0x8000
+    response_flags |= opcode << 11
+    response_flags |= rd << 8
+
+    rcode = 0 if opcode == 0 else 4
+    response_flags |= rcode
+
+    transaction_id = query_id
+    header_flags = struct.pack(">H", response_flags)
     qdcount = struct.pack(">H", 1)            # Number of questions
     ancount = struct.pack(">H", 1)            # Number of answers
     nscount = struct.pack(">H", 0)            # Number of authority records
     arcount = struct.pack(">H", 0)            # Number of additional records
 
-    header = transaction_id + flags + qdcount + ancount + nscount + arcount
+    header = transaction_id + header_flags + qdcount + ancount + nscount + arcount
 
-    question = b"\x0c" + b"codecrafters" + b"\x02" + b"io" + b"\x00"
+    question = domain_name
     question += struct.pack(">H", 1)  # Type: A
     question += struct.pack(">H", 1)  # Class: IN
 
 
-    adomain = b"\x0c" + b"codecrafters" + b"\x02" + b"io" + b"\x00"
+    adomain = domain_name
     atype = struct.pack(">H", 1)        # Type: A
     aclass = struct.pack(">H", 1)       # Class: IN
     ttl = struct.pack(">I", 60)         # TTL: 60 seconds
@@ -37,7 +53,7 @@ def main():
         try:
             buf, source = udp_socket.recvfrom(512)
 
-            response = build_dns_response()
+            response = build_dns_response(buf)
 
             udp_socket.sendto(response, source)
         except Exception as e:

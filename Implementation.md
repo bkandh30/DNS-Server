@@ -77,3 +77,19 @@ Each question has the following structure:
 Answer section contains a list of resource records, which are answers to the questions asked in the question section.
 
 Each RR has: Name, Type, Class, TTL (Time to Live), Length and Data. TTL is the duration in seconds a record can be cached before querying.
+
+## Parsing the Header Section
+
+From the actual data which is received as a bytes object, the header section is parsed.
+
+The first two bytes of the packet contains the query identifier.
+
+OPCODE is retrieved from the next two bytes by unpacking them as 16-bit signed integer and shifting them by 11 bits to the right and masking with `0xF` to generate the 4-bit opcode to the least significant position.
+
+RD Flag is retrieved from the same two bytes that were used for OPCODE where they are unpacked as 16-bit signed integer and shifting them by 9 bits to the right and masking with `0x1` to generate its value (either 0 or 1).
+
+As a result, we are able to parse the query ID, OPCODE, and RD flag.
+
+Based on these parameter, we're also going to generate the response flags.
+
+The response flags start with the default value of `0x8000` which sets the QR bit to 1, indicating that this packet is a response. The OPCODE is shifted by 11 bits to left and added to the response flag so that both the response and query carries the same OPCODE. The RD flag is shifted by 8 bits to the left and added to the response flags. If the OPCODE indicates a standard query then it sets RCODE to 0 otherwise, it sets RCODE to 4 which indicates **NOT IMPLEMENTED**. The RCODE is then incorporate into the response flags by setting the lowest 4 bits.
