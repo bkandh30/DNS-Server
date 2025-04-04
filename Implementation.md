@@ -93,3 +93,13 @@ As a result, we are able to parse the query ID, OPCODE, and RD flag.
 Based on these parameter, we're also going to generate the response flags.
 
 The response flags start with the default value of `0x8000` which sets the QR bit to 1, indicating that this packet is a response. The OPCODE is shifted by 11 bits to left and added to the response flag so that both the response and query carries the same OPCODE. The RD flag is shifted by 8 bits to the left and added to the response flags. If the OPCODE indicates a standard query then it sets RCODE to 0 otherwise, it sets RCODE to 4 which indicates **NOT IMPLEMENTED**. The RCODE is then incorporate into the response flags by setting the lowest 4 bits.
+
+## Parsing Question Section
+
+The first 12 bytes that are used for header section are skipped.
+
+The domain name is stored in a special format where each label is preceded by a length byte. If the length is 0, it means the domain name is finished. The 0 byte is added to the end, position is incremented and the loop breaks. Otherwise, it appends the length byte to the `domain_name`, then reads the next `length` bytes. This process continues until the entire domain name is extracted.
+
+After the domain name, the function reads the next 2 bytes as the question type and it then reads the following 2 bytes as the question class.
+
+The question section is then constructed by concatenating the extracted domain name, the type bytes, and the class bytes. The domain name is also separately converted to a bytes object.
