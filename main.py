@@ -18,78 +18,113 @@ def parse_header(query_packet: bytes):
 
     return query_id, response_flags
 
-def parse_question(query_packet: bytes):
-    #Extract the Question section
-    #Skip 12 bytes
-    position = 12
-
+def extract_domain_name(buf, position):
     domain_name = bytearray()
-
-    #Extract Domain Name
+    # Used to detect compression loops
+    original_position = position
+    visited_positions = set()
     while True:
-        length = query_packet[position]
+        if position in visited_positions:
+            # We've detected a loop in compression pointers
+            raise ValueError("Compression loop detected")
+        if position >= len(buf):
+            raise ValueError("Buffer overflow while parsing domain name")
+        length = buf[position]
+        # Check if this is a compression pointer (first two bits are set to 1)
+        if (length & 0xC0) == 0xC0:
+            if position + 1 >= len(buf):
+                raise ValueError("Buffer overflow while parsing compression pointer")
+            # Extract the offset (14 bits) from the two bytes
+            offset = ((length & 0x3F) << 8) | buf[position + 1]
+            # Only add compression pointer to visited positions if this isn't the first pointer
+            if position != original_position:
+                visited_positions.add(position)
+            # Update position to the offset
+            position = offset
+            continue
         if length == 0:
+            # End of domain name
             domain_name.append(0)
             position += 1
             break
-    
+
+        # Add this position to visited positions
+        visited_positions.add(position)
+        # Copy the length byte and the label content
         domain_name.append(length)
         position += 1
-        domain_name.extend(query_packet[position:position+length])
+        if position + length > len(buf):
+            raise ValueError("Buffer overflow while parsing label")
+        domain_name.extend(buf[position : position + length])
         position += length
-    
-    #Extract type and class
-    type_bytes = query_packet[position:position+2]
-    position += 2
-    class_bytes = query_packet[position:position+2]
-    position += 2
-    
-    question = bytes(domain_name) + type_bytes + class_bytes
+    return bytes(domain_name), position
 
-    domain_name = bytes(domain_name)
+def parse_questions(buf, qdcount):
+    position = 12  # Skip the header
+    questions = bytearray()
+    domain_names = []
+    for _ in range(qdcount):
+        # Extract domain name with compression support
+        domain_name, new_position = extract_domain_name(buf, position)
+        domain_names.append(domain_name)
+        # Extract type and class
+        if new_position + 4 > len(buf):
+            raise ValueError("Buffer overflow while parsing question type and class")
+        type_bytes = buf[new_position : new_position + 2]
+        class_bytes = buf[new_position + 2 : new_position + 4]
+        # Add to the questions bytearray
+        questions.extend(domain_name)
+        questions.extend(type_bytes)
+        questions.extend(class_bytes)
 
-    return question, domain_name
+        # Update position for next question
+        position = new_position + 4
 
-def build_dns_response(query_packet: bytes) -> bytes:
-    query_id, response_flags = parse_header(query_packet)
-    
-    transaction_id = query_id
-    header_flags = struct.pack(">H", response_flags)
-    qdcount = struct.pack(">H", 1)            # Number of questions
-    ancount = struct.pack(">H", 1)            # Number of answers
-    nscount = struct.pack(">H", 0)            # Number of authority records
-    arcount = struct.pack(">H", 0)            # Number of additional records
+    return bytes(questions), domain_names
 
-    header = transaction_id + header_flags + qdcount + ancount + nscount + arcount
-
-    question, domain_name = parse_question(query_packet)
-
-    adomain = domain_name
-    atype = struct.pack(">H", 1)        # Type: A
-    aclass = struct.pack(">H", 1)       # Class: IN
-    ttl = struct.pack(">I", 60)         # TTL: 60 seconds
-    data_length = struct.pack(">H", 4)  # Data length: 4 bytes (for IPv4)
-    ip = socket.inet_aton("8.8.8.8")    # IP address: 8.8.8.8
-
-    answer = adomain + atype + aclass + ttl + data_length + ip
-
-    return header + question + answer
 
 def main():
+
     print("Logs from your program will appear here!")
-    
+
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket.bind(("127.0.0.1", 2053))
-    
+
     while True:
         try:
             buf, source = udp_socket.recvfrom(512)
+            print(f"Received {len(buf)} bytes from {source}")
 
-            response = build_dns_response(buf)
+            query_id, response_flags = parse_header(buf)
 
+            qdcount = struct.unpack(">H", buf[4:6])[0]
+            print(f"Question count: {qdcount}")
+
+            header = query_id
+            header += struct.pack(">H", response_flags)
+            header += struct.pack(">H", qdcount)  # Number of questions
+            header += struct.pack(">H", qdcount)  # Number of answers
+            header += struct.pack(">H", 0)        # Number of authority records
+            header += struct.pack(">H", 0)        # Number of additional records
+
+            # Extract all question sections and domain names
+            questions, domain_names = parse_questions(buf, qdcount)
+
+            response = header + questions
+
+            for domain_name in domain_names:
+                answer = domain_name
+                answer += struct.pack(">H", 1)  # Type: A
+                answer += struct.pack(">H", 1)  # Class: IN
+                answer += struct.pack(">I", 60)  # TTL: 60 seconds
+                answer += struct.pack(">H", 4)  # Data length: 4 bytes (for IPv4)
+                answer += socket.inet_aton("8.8.8.8")  # IP address: 8.8.8.8
+                response += answer
+
+            print(f"Sending response of {len(response)} bytes")
             udp_socket.sendto(response, source)
         except Exception as e:
-            print(f"Error receiving data: {e}")
+            print(f"Error: {e}")
             break
 
 
