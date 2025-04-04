@@ -52,8 +52,22 @@ However, **if the DNS response is too big, it can exceed 512 bytes**. DNS then f
 
 All communications in DNS protocol are carried in a single format called a "message". Each message consists of 5 sections: header, question, answer, authority, and an additional space.
 
+Domain names in DNS packets are encoded as a sequence of labels.
+
+Labels are encoded as `<length><content>`, where `<length>` is a single byte that specifies the length of the label, and `<content>` is the actual content of the label. The sequence of labels is terminated by a null byte (`\x00`).
+
 ## Header Section Structure
 
 A header field (flags) controls the content of the other 4 sections.
 
 The header section consists of the following fields: _Identification, Flags, Number of questions, Number of answers, Number of authority resource records (RRs), and Number of additional RRs_. Each field is 16 bits long, and appears in the order given. The identification field is used to match responses with queries. After the flags word, the header ends with four 16-bit integers which contain the number of records in each of the sections that follow, in the same order.
+
+## Question Section Structure
+
+The question section contains a list of questions (usually 1) that the sender wants to ask the receiver. This section is present in both query and reply packets.
+
+Each question has the following structure:
+
+- Name: A domain name, represented as a sequence of labels.
+- Type: The type of record.
+- Class; Usually set to 1.
