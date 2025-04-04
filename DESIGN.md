@@ -20,7 +20,7 @@ When a user types the name of a website into the browser:
 
 The browser then makes the HTTP request and establishes the connection with the website.
 
-## Basic DNS Lookup
+## High Level Architecture: Basic DNS Lookup
 
 ![DNS Server](images/dns-server.png)
 
