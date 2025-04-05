@@ -86,7 +86,7 @@ The first two bytes of the packet contains the query identifier.
 
 OPCODE is retrieved from the next two bytes by unpacking them as 16-bit signed integer and shifting them by 11 bits to the right and masking with `0xF` to generate the 4-bit opcode to the least significant position.
 
-RD Flag is retrieved from the same two bytes that were used for OPCODE where they are unpacked as 16-bit signed integer and shifting them by 9 bits to the right and masking with `0x1` to generate its value (either 0 or 1).
+RD Flag is retrieved from the same two bytes that were used for OPCODE where they are unpacked as 16-bit signed integer and shifting them by 8 bits to the right and masking with `0x1` to generate its value (either 0 or 1).
 
 As a result, we are able to parse the query ID, OPCODE, and RD flag.
 
@@ -103,3 +103,39 @@ The domain name is stored in a special format where each label is preceded by a 
 After the domain name, the function reads the next 2 bytes as the question type and it then reads the following 2 bytes as the question class.
 
 The question section is then constructed by concatenating the extracted domain name, the type bytes, and the class bytes. The domain name is also separately converted to a bytes object.
+
+## Parsing Compressed Packets
+
+In DNS, domain names inside the packet can sometimes be compressed to save space.
+Instead of repeating full domain names, the DNS packet uses pointers to refer to earlier names.
+
+A compression pointer has the two highest bits set (`11` in binary). The remaining 14 bits are an offset that points to another location in the packet where the full domain name starts.
+
+When parsing, if a label length byte has the two highest bits set (i.e., `(length & 0xC0) == 0xC0`), it is a compression pointer.
+We then extract the offset from the current two bytes, jump to that offset, and continue reading the domain name from there.
+
+This ensures that we correctly reconstruct the full domain name while avoiding infinite loops by keeping track of visited positions. If multiple compression pointers are chained, we carefully handle them to avoid errors.
+
+Parsing compressed packets correctly is critical, as many real DNS servers use compression to minimize packet size.
+
+## Forwarding DNS Queries
+
+If the DNS server cannot or does not want to directly answer a query, it can forward the query to an upstream resolver (e.g., Google's `8.8.8.8`) and relay the response back to the client.
+
+The server acts as a middleman:
+
+1. It receives the query from the client.
+2. It sends the query to the resolver server.
+3. It waits for a response with a timeout.
+4. It sends back the resolver’s response to the client.
+
+If there are multiple questions in the original query:
+
+- Each question is forwarded separately.
+- A new small query packet is created for each question.
+- Each response is parsed to extract just the answer section.
+- The server aggregates all answers and sends them back together in one combined response.
+
+If the upstream resolver does not respond in time (timeout), the server sends a **default response** indicating an error.
+
+This forwarding mechanism allows the server to work even without full DNS records of its own, behaving like a basic recursive resolver.
